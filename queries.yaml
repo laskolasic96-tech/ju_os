@@ -1,0 +1,287 @@
+# Database Connection (shared with config.yaml)
+database:
+  url: jdbc:oracle:thin:@localhost:1521/XEPDB1
+  username: system
+  password: oracle
+  pool:
+    minSize: 5
+    maxSize: 20
+
+# SQL Queries Configuration
+queries:
+  # SELECT: Get employees with optional filters
+  - name: getEmployees
+    type: select
+    description: Get employees list with optional department filter
+    sql: |
+      SELECT employee_id, first_name, last_name, email, phone_number, 
+             hire_date, job_id, salary, commission_pct, manager_id, department_id
+      FROM hr.employees
+      WHERE 1=1
+      {% if department_id %}
+      AND department_id = :departmentId
+      {% endif %}
+      {% if manager_id %}
+      AND manager_id = :managerId
+      {% endif %}
+      {% if min_salary %}
+      AND salary >= :minSalary
+      {% endif %}
+      {% if max_salary %}
+      AND salary <= :maxSalary
+      {% endif %}
+      {% if job_id %}
+      AND job_id = :jobId
+      {% endif %}
+      ORDER BY employee_id
+      OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+    params:
+      - name: departmentId
+        type: integer
+        required: false
+      - name: managerId
+        type: integer
+        required: false
+      - name: minSalary
+        type: double
+        required: false
+      - name: maxSalary
+        type: double
+        required: false
+      - name: jobId
+        type: string
+        required: false
+      - name: offset
+        type: integer
+        default: 0
+      - name: limit
+        type: integer
+        default: 100
+
+  # SELECT: Get single employee by ID
+  - name: getEmployeeById
+    type: select
+    description: Get employee by ID
+    sql: |
+      SELECT employee_id, first_name, last_name, email, phone_number,
+             hire_date, job_id, salary, commission_pct, manager_id, department_id
+      FROM hr.employees
+      WHERE employee_id = :employeeId
+    params:
+      - name: employeeId
+        type: integer
+        required: true
+
+  # SELECT: Get departments
+  - name: getDepartments
+    type: select
+    description: Get all departments
+    sql: |
+      SELECT department_id, department_name, manager_id, location_id
+      FROM hr.departments
+      ORDER BY department_name
+      OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+    params:
+      - name: offset
+        type: integer
+        default: 0
+      - name: limit
+        type: integer
+        default: 100
+
+  # SELECT: Get jobs
+  - name: getJobs
+    type: select
+    description: Get all jobs
+    sql: |
+      SELECT job_id, job_title, min_salary, max_salary
+      FROM hr.jobs
+      {% if job_title_like %}
+      WHERE LOWER(job_title) LIKE LOWER(:jobTitleLike)
+      {% endif %}
+      ORDER BY job_title
+    params:
+      - name: jobTitleLike
+        type: string
+        required: false
+
+  # UPDATE: Update employee salary
+  - name: updateEmployeeSalary
+    type: update
+    description: Update employee salary
+    sql: |
+      UPDATE hr.employees
+      SET salary = :newSalary
+      {% if commissionPct %}
+      , commission_pct = :commissionPct
+      {% endif %}
+      WHERE employee_id = :employeeId
+    params:
+      - name: employeeId
+        type: integer
+        required: true
+      - name: newSalary
+        type: double
+        required: true
+      - name: commissionPct
+        type: double
+        required: false
+
+  # UPDATE: Update employee department
+  - name: updateEmployeeDepartment
+    type: update
+    description: Move employee to different department
+    sql: |
+      UPDATE hr.employees
+      SET department_id = :newDepartmentId
+      {% if newManagerId %}
+      , manager_id = :newManagerId
+      {% endif %}
+      WHERE employee_id = :employeeId
+    params:
+      - name: employeeId
+        type: integer
+        required: true
+      - name: newDepartmentId
+        type: integer
+        required: true
+      - name: newManagerId
+        type: integer
+        required: false
+
+  # INSERT: Insert new employee
+  - name: insertEmployee
+    type: insert
+    description: Insert new employee record
+    sql: |
+      INSERT INTO hr.employees (
+        employee_id, first_name, last_name, email, phone_number,
+        hire_date, job_id, salary, commission_pct, manager_id, department_id
+      ) VALUES (
+        :employeeId, :firstName, :lastName, :email, :phoneNumber,
+        TO_DATE(:hireDate, 'YYYY-MM-DD'), :jobId, :salary, :commissionPct, :managerId, :departmentId
+      )
+    params:
+      - name: employeeId
+        type: integer
+        required: true
+      - name: firstName
+        type: string
+        required: true
+      - name: lastName
+        type: string
+        required: true
+      - name: email
+        type: string
+        required: true
+      - name: phoneNumber
+        type: string
+        required: false
+        default: null
+      - name: hireDate
+        type: string
+        required: true
+      - name: jobId
+        type: string
+        required: true
+      - name: salary
+        type: double
+        required: true
+      - name: commissionPct
+        type: double
+        required: false
+        default: null
+      - name: managerId
+        type: integer
+        required: false
+        default: null
+      - name: departmentId
+        type: integer
+        required: false
+        default: null
+
+  # SELECT: Search employees (complex example)
+  - name: searchEmployees
+    type: select
+    description: Advanced employee search with multiple conditions
+    sql: |
+      SELECT e.employee_id, e.first_name, e.last_name, e.email, 
+             e.salary, d.department_name, j.job_title
+      FROM hr.employees e
+      LEFT JOIN hr.departments d ON e.department_id = d.department_id
+      LEFT JOIN hr.jobs j ON e.job_id = j.job_id
+      WHERE 1=1
+      {% if firstName %}
+      AND LOWER(e.first_name) LIKE LOWER(:firstName || '%')
+      {% endif %}
+      {% if lastName %}
+      AND LOWER(e.last_name) LIKE LOWER(:lastName || '%')
+      {% endif %}
+      {% if email %}
+      AND LOWER(e.email) LIKE LOWER('%' || :email || '%')
+      {% endif %}
+      {% if salaryMin %}
+      AND e.salary >= :salaryMin
+      {% endif %}
+      {% if salaryMax %}
+      AND e.salary <= :salaryMax
+      {% endif %}
+      {% if departmentId %}
+      AND e.department_id = :departmentId
+      {% endif %}
+      {% if jobId %}
+      AND e.job_id = :jobId
+      {% endif %}
+      {% if hireDateFrom %}
+      AND e.hire_date >= TO_DATE(:hireDateFrom, 'YYYY-MM-DD')
+      {% endif %}
+      {% if hireDateTo %}
+      AND e.hire_date <= TO_DATE(:hireDateTo, 'YYYY-MM-DD')
+      {% endif %}
+      ORDER BY e.employee_id
+      OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
+    params:
+      - name: firstName
+        type: string
+        required: false
+      - name: lastName
+        type: string
+        required: false
+      - name: email
+        type: string
+        required: false
+      - name: salaryMin
+        type: double
+        required: false
+      - name: salaryMax
+        type: double
+        required: false
+      - name: departmentId
+        type: integer
+        required: false
+      - name: jobId
+        type: string
+        required: false
+      - name: hireDateFrom
+        type: string
+        required: false
+      - name: hireDateTo
+        type: string
+        required: false
+      - name: offset
+        type: integer
+        default: 0
+      - name: limit
+        type: integer
+        default: 100
+
+  # DELETE: Delete employee
+  - name: deleteEmployee
+    type: delete
+    description: Delete employee by ID
+    sql: |
+      DELETE FROM hr.employees WHERE employee_id = :employeeId
+    params:
+      - name: employeeId
+        type: integer
+        required: true
